@@ -1,0 +1,1540 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
+        <meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+        <title>MyCrypt</title>
+        <link rel="icon" type="image/svg+xml" href="lock.svg">
+
+        <link rel="preload" as="image" href="hmenu.svg">
+        <link rel="preload" as="image" href="eye.svg">
+        <link rel="preload" as="image" href="eye_off.svg">
+        <link rel="preload" as="image" href="loader.svg">
+        <style>
+        body, button, input {
+            font-family:Arial;
+            font-size:14px;
+        }
+        table {
+            border-collapse: collapse;
+        }
+        table, td, th {
+            border: 1px solid black;
+        }
+
+        td {
+            padding: 5px;
+        }
+
+        #id_search_results table {
+            width:100%;
+        }
+
+        #id_search_results td {
+            padding: 2px;
+        }
+
+        textarea {
+            resize:none;
+            word-break:break-all;
+        }
+
+        .field_name {
+            vertical-align:top;
+            width:1%;
+        }
+
+        .row-handle {
+            width: 100%;
+            height: 5px;
+            padding: 0px;
+            background-color: #ccc;
+            cursor: ns-resize; /* Vertical resize cursor */
+            user-select:none;
+        }
+
+        .no-select {
+            -webkit-user-select: none; /* Safari */
+            -ms-user-select: none; /* Internet Explorer/Edge */
+            user-select: none; /* Non-prefixed version, currently supported by Chrome, Opera and Firefox */
+        }
+
+        .record-header {
+            margin-top: 5px;
+            font-size:18px;
+            padding-left: 5px;
+            padding-right: 5px;
+            padding-bottom: 3px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0, 0, 0, 0.4);
+        }
+
+        .modal-content {
+            background-color: #fefefe;
+            margin: 15% auto;
+            padding: 20px;
+            border: 1px solid #888;
+            width: 30%;
+        }
+
+        .ctxMenu {
+            display: none;
+            position: absolute;
+            z-index: 1000;
+            box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
+            background-color: #fff;
+            min-width: 120px;
+            overflow: auto;
+            border: 1px solid #ccc;    
+            border-radius: 12px;
+            padding: 2px 6px;
+        }
+        
+        .ctxMenu button {
+            color: black;
+            padding: 2px 6px;
+            text-decoration: none;
+            display: block;
+            font-size: 1em;
+            border: none;
+            background: none;
+            width: 100%;
+            text-align: left;
+            cursor: pointer;
+        }
+        
+        .ctxMenu button:hover {
+            background-color: #ddd;
+        }
+
+        .root-menu {
+            border-radius: 5px;
+        }
+        
+        .folder-option {
+            width: 200px;
+        }
+
+        #id_top_panel {
+            background: #eee;
+            overflow: auto;
+        }
+        #id_splitter {
+            background: #444;
+            height: 5px;
+            cursor: ns-resize;
+        }
+        #id_bottom_panel {
+            background: #eee;
+            overflow: auto;
+            flex-grow: 1;
+        }
+
+        </style>
+        <script type="text/javascript" src="libpwsafejs/jDataView/src/jdataview.js"></script>
+        <script type="text/javascript" src="libpwsafejs/crypto-sha256-hmac.js"></script>
+        <script type="text/javascript" src="libpwsafejs/twofish.js"></script>
+        <script type="text/javascript" src="libpwsafejs/pwsafedb.js"></script>
+
+        <link rel="stylesheet" href="treeview.css" />
+        <script type="text/javascript" src="treeview.js"></script>
+        
+        <script type='text/javascript'>
+        var g_pwsafe = new PWSafeDB()
+        var g_passphrase = null;
+        var g_filename = null;
+        var g_treeview = null;
+        var g_folders_only = false;
+        var g_saved_path = null;
+        // My opinionated policy that different nodes on the displayed
+        // tree should not have the same path, 
+        // i.e: No identical titles displayed under same group (this only
+        // affects the UI, not the .psafe3 file).
+        var g_paths_map = null; 
+        var g_index_to_unique_path = null;
+
+        function gebi(id) {
+            return document.getElementById(id);
+        }
+
+        function setZoom100() {
+            // Modern browsers (except Firefox)
+            document.body.style.zoom = "100%";
+
+            // Firefox
+            document.body.style.MozTransform = "scale(1)";
+        }
+        
+        function animateText(element, text, distance, delay) {
+            if (typeof(distance) !== 'number') {
+                distance = 40;
+            }
+            if (typeof(delay) !== 'number') {
+                delay = 500;
+            }
+
+            // Create and style the div element with text
+            var floatingDiv = document.createElement('div');
+            floatingDiv.textContent = text;
+            floatingDiv.style.position = 'absolute';
+            floatingDiv.style.transition = `all ${delay / 1000}s ease-in-out`;
+            floatingDiv.style.opacity = '1';
+            floatingDiv.style.zIndex = 1001;
+
+            // Append to body to get its dimensions
+            document.body.appendChild(floatingDiv);
+
+            // Get target element and floatingDiv dimensions
+            var rect = element.getBoundingClientRect();
+            var divHeight = floatingDiv.offsetHeight;
+
+            // Adjust position so bottom of floatingDiv aligns with top of element
+            floatingDiv.style.left = rect.left + 'px';
+            floatingDiv.style.top = (rect.top - divHeight) + 'px';
+
+            // Start the animation
+            setTimeout(function() {
+                floatingDiv.style.top = (rect.top - divHeight - distance) + 'px'; // Move up by distance px from starting position
+                floatingDiv.style.opacity = '0'; // Fade out
+
+                // Remove the div after animation
+                setTimeout(function() {
+                    document.body.removeChild(floatingDiv);
+                }, delay); // Use delay parameter for duration
+            }, 0);
+        }
+
+        function copyToClipboard(text) {
+            function copyToClipboardFallback(text) {
+                var tempInput = document.createElement("input");
+                tempInput.style = "position: absolute; left: -1000px; top: -1000px";
+                tempInput.value = text;
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                document.execCommand("copy");
+                document.body.removeChild(tempInput);
+                console.log("Copied the text: " + text);
+            }
+
+            if ('clipboard' in navigator) {
+                navigator.clipboard.writeText(text).then(function() {
+                    console.log('Copying to clipboard was successful!');
+                }, function(err) {
+                    console.error('Could not copy text: ', err);
+                    console.log('Attempting clipboard copy fallback');
+                    copyToClipboardFallback(text)
+                });
+                return;
+            }
+            copyToClipboardFallback(text)
+        }
+
+        function daysSince(date) {
+            const today = new Date();
+            const pastDate = new Date(date);
+            const millisecondsPerDay = 24 * 60 * 60 * 1000; // Number of milliseconds in a day
+            const elapsedMilliseconds = today - pastDate; // Difference in milliseconds
+            const total = parseInt(Math.floor(elapsedMilliseconds / millisecondsPerDay));
+            var retval = null
+            switch (total) {
+                case 0: 
+                    retval = 'today';
+                    break;
+                case 1:
+                    retval = 'yesterday';
+                    break;
+                default: 
+                    retval = `${total} days ago`;
+                    break;
+            }
+            return retval;
+        }
+
+        function compareTreeNodes(a, b) {
+            var ac = a.children.length > 0 ? 1 : 0; 
+            var bc = b.children.length > 0 ? 1 : 0; 
+            if (ac != bc) {
+                return bc - ac; // node or folder
+            }
+
+            return b.name.toLowerCase() < a.name.toLowerCase(); // Alphabetical order (case-insensitive)
+        }
+
+        function create_progress_bar(id) {
+            var obj = {};
+            var pcontainer = gebi(id);
+            var html = `
+                <div id="id_progress_status" style="width:100%; background-color:#ddd; font-family:Arial; font-size:14px;"> 
+                    <div id="id_progress_bar" style="width:1%; height:27px; background-color:lightgreen; text-align:center; line-height:25px; color:black;">1%</div> 
+                </div> 
+            `;
+            pcontainer.innerHTML = html;
+            var element = gebi("id_progress_bar"); 
+            obj.position = function(percent) {
+                percent = percent < 0 ? 0 : percent;
+                percent = percent > 100 ? 100 : percent;
+                element.style.width = percent + '%'; 
+                element.innerHTML = percent + '%'; 
+            }
+            obj.position(0);
+            return obj;
+        }
+
+        function save_record(pwrec) {
+            console.log('before',pwrec);
+            var now = new Date();
+            for (field of ['username', 'password', 'URL', 'notes']) {
+                var id = `id_login_val_${field}`;
+                var val = gebi(id).value;
+                var modified = false;
+                if (val && val !== '') {
+                    if (pwrec[field] !== val) {
+                        modified = true;
+                        pwrec[field] = val;
+                        if (field == 'password') {
+                            pwrec.passphraseModifyTime = now;
+                        }
+                    }
+                }
+            }
+
+            if (modified) {
+                pwrec.modifyTime = now;
+            }
+            console.log('after', pwrec);
+            hideModal();
+        }
+
+        function appendCopyIcon(input_element_id, copy_icon_path) {
+            const inputElement = gebi(input_element_id);
+            if (inputElement == null) {
+                console.warn(`input element is null for id '${input_element_id}'`);
+                return;
+            }
+
+            // Check if the icon already exists
+            var prevSibling = inputElement;
+            var nextSibling = inputElement.nextElementSibling;;
+            var accumulated_icons_width = 0;
+            var margin_left = 3;
+            while(nextSibling && nextSibling.nodeName === 'IMG') {
+                if (nextSibling.classList.contains("copy-icon")) {
+                    return; // Icon already added, no need to create another
+                }
+                accumulated_icons_width += nextSibling.clientWidth + margin_left + 5;
+                prevSibling = nextSibling;
+                nextSibling = nextSibling.nextSibling;
+            }
+            
+            inputElement.parentNode.style.visibility = 'hidden';
+            const copyIcon = document.createElement("img");
+            copyIcon.src = copy_icon_path; // Initial icon (hidden password)
+            copyIcon.style.cursor = "pointer"; // Change cursor to a hand
+            copyIcon.classList.add("copy-icon"); // Add a custom class for identification
+            copyIcon.style.height = (inputElement.clientHeight+5) + 'px';
+            copyIcon.style.verticalAlign = 'middle';
+            copyIcon.style.marginLeft = `${margin_left}px`;
+
+            copyIcon.onload = function() {
+                var reduce_width = accumulated_icons_width + copyIcon.clientWidth + margin_left;
+                inputElement.style.width = `calc(95% - ${reduce_width}px)`;
+                inputElement.parentNode.style.visibility = '';
+            }
+            // Add the icon to the right of the input
+            prevSibling.insertAdjacentElement("afterend", copyIcon);
+
+            copyIcon.onclick = function () {
+                copyToClipboard(inputElement.value);
+                animateText(copyIcon, 'Copied', 10, 450);
+            };
+        }
+
+        function appendPasswordToggler(input_element_id, path_eye, path_eye_slash) {
+            var inputElement = gebi(input_element_id);
+
+            if (inputElement == null) {
+                console.warn(`input element is null for id '${input_element_id}'`);
+                return;
+            }
+
+            var prevSibling = inputElement;
+            var nextSibling = inputElement.nextElementSibling;
+            var accumulated_icons_width = 0;
+            var margin_left = 3;
+
+            while(nextSibling && nextSibling.nodeName === 'IMG') {
+                // Check if the icon already exists
+                if (nextSibling.classList.contains("password-toggle-icon")) {
+                    return; // Icon already added, no need to create another
+                }
+                accumulated_icons_width += nextSibling.clientWidth + margin_left + 5;
+                prevSibling = nextSibling;
+                nextSibling = nextSibling.nextSibling;
+            }
+
+            inputElement.parentNode.style.visibility = 'hidden';
+
+            const toggleIcon = document.createElement("img");
+            toggleIcon.src = path_eye; // Initial icon (hidden password)
+            toggleIcon.style.cursor = "pointer"; // Change cursor to a hand
+            toggleIcon.classList.add("password-toggle-icon"); // Add a custom class for identification
+            toggleIcon.style.height = (inputElement.clientHeight+5) + 'px';
+            toggleIcon.style.verticalAlign = 'middle';
+            toggleIcon.style.marginLeft = `${margin_left}px`;
+
+            toggleIcon.onload = function() {
+                var reduce_width = accumulated_icons_width + toggleIcon.clientWidth + margin_left;
+                inputElement.style.width = `calc(95% - ${reduce_width}px)`;
+                inputElement.parentNode.style.visibility = '';
+            }
+            // Add the icon to the right of the input
+
+            inputElement.insertAdjacentElement("afterend", toggleIcon);
+
+            // Toggle password visibility when the icon is clicked
+            toggleIcon.onclick = function () {
+                const type = inputElement.getAttribute("type") === "password" ? "text" : "password";
+                // TODO: the entire mess below is because inputElement.setAttribute("type", type)
+                //       resets inputElement.style.width to some previous value for some reason
+                //       and setting it to the correct value by brute force works only after
+                //       a timeout.
+                var savewidth = inputElement.style.width;
+                var savedisplay = inputElement.style.display;
+                inputElement.parentNode.style.visibility = 'hidden';
+                inputElement.setAttribute("type", type);
+                // Toggle the icon
+                this.src = this.src.endsWith(path_eye) ? path_eye_slash : path_eye;
+                setTimeout(function() {
+                    inputElement.style.width = savewidth;
+                    inputElement.style.display = savedisplay;
+                    inputElement.parentNode.style.visibility = '';
+                }, 50);
+            };
+        }
+
+        function append_copy_icon(field_id) {
+            appendCopyIcon(field_id, "copy.svg");
+        }
+
+        function append_password_toggle(passfield_id, copyIcon) {
+            if (typeof(copyIcon) !== 'boolean') {
+                copyIcon = true;
+            }
+            appendPasswordToggler(passfield_id, "eye.svg", "eye_off.svg");
+            if (copyIcon) {
+                append_copy_icon(passfield_id);
+            }
+        }
+
+        function delLogin(treerec) {
+            console.log('delLogin');
+            var path = treerec.data.path;
+            remove_and_reload(path)
+            update_unsaved_ui(true);
+        }
+
+        function makeFirstUpper(str) {
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        }        
+
+        function renLogin(treerec) {
+            var index = treerec.data.index;
+            var path = treerec.data.path;
+            var pwrec = g_pwsafe.records[index];
+            var html = `<table style="width:100%; margin-bottom:6px;">
+                <tr>
+                    <td>New Name</td>
+                    <td><input id="id_ren_login" style="width:95%" value="${pwrec.title}"></td>
+                </tr>
+                </table>
+                <button id='id_btn_ren_login'>Save</button>&nbsp;
+                <button onclick="hideModal()">Cancel</button>
+                `;
+
+            showModal(html, {'focus_id':'id_ren_login'});
+
+            gebi(`id_btn_ren_login`).onclick = function() {
+                var newname = gebi('id_ren_login').value.replaceAll('.', '\\.');
+                pwrec.title = newname;
+                var newpath = pwrec.group + "." + pwrec.title; 
+                var selNode = reload_and_expand(newpath)
+                update_unsaved_ui(true);
+                hideModal();
+            };
+        }
+
+        // View/Edit login values
+        function viewLoginValues(treerec, editable) {
+            if (typeof(editable) !== 'boolean') {
+                editable = false;
+            }
+            var readonly = editable ? '' : 'readonly';
+
+            var index = treerec.data.index;
+            var pwrec = g_pwsafe.records[index]            
+
+            var html = '<table style="width:100%;">';
+            for (field of ['username', 'password', 'URL', 'notes']) {
+                var value_container_tag = `<input style='width:95%;' id="id_login_val_${field}" ${readonly}/>`
+                if (field === 'notes') {
+                    value_container_tag = `<textarea style='width:95%; height:25vh;' id="id_login_val_${field}" ${readonly}></textarea>`
+                }
+                if (field === 'password') {
+                    value_container_tag = `<input type='password' style='width:100%;' id="id_login_val_${field}" ${readonly} />`
+                }
+
+                html += `<tr>
+                    <td class='field_name'>${makeFirstUpper(field)}</td>
+                    <td>${value_container_tag}</td>
+                    </tr>`;
+            }
+            html += '</table>';
+            html += '<br />';
+            if (editable) {
+                html += `<button id='id_btn_save_rec'>Save</button>&nbsp;`
+            }
+            html += `<button onclick="hideModal()">Cancel</button>`;
+
+            showModal(html, {'focus_id':'id_login_val_username'});
+
+            for (field of ['username', 'password', 'URL', 'notes']) {
+                var value = ''
+                if (field in pwrec) {
+                    value = pwrec[field];
+                }
+                gebi(`id_login_val_${field}`).value = value;
+            }
+
+            append_password_toggle("id_login_val_password");
+            append_copy_icon('id_login_val_username');
+            append_copy_icon('id_login_val_URL');
+
+            if (editable) {
+                gebi(`id_btn_save_rec`).onclick = function() {
+                    save_record(pwrec);
+                    display_record_data(treerec);
+                    update_unsaved_ui(true);                
+                };
+            }
+
+        }
+        
+        // Function to show the modal        
+        function showModal(html, options) {
+            var focus_id, modal_width;
+            if (typeof(options) == 'object') {
+                if ('focus_id' in options) {
+                    focus_id = options['focus_id'];
+                }
+                if ('modal_width' in options) {
+                    modal_width = options['modal_width'];
+                }
+            }
+            const modal_content = gebi("id_modal_content");
+            modal_content.innerHTML = html;
+            const modal = gebi("id_modal");
+            modal.style.display = "block";
+            if (typeof(focus_id) == 'string') {
+                gebi(focus_id).focus();
+            }
+            if (typeof(modal_width) == 'string') {
+                modal_content.style.width = modal_width;
+            }
+        }
+
+        // Function to hide the modal
+        function hideModal() {
+            const modal = gebi("id_modal");
+            modal.style.display = "none"; // hide modal
+
+            const modal_content = gebi("id_modal_content");
+            modal_content.style.width = 'calc(100% - 95px)' // reset modal content width; 
+        }
+
+        const modal = gebi("modal");
+
+        function sortTree(nodes) {
+            for (const node of nodes) {
+                sortTree(node.children);
+                node.children.sort((a, b) => {
+                    return compareTreeNodes(a, b);
+                });
+            }
+        }
+
+        //------------------------------------------------------------------------------------
+        function remove_and_reload(path) {
+            console.log(`remove and reload ${path}`);
+
+            g_pwsafe.records = g_pwsafe.records.filter(function(x) {
+                var title = x.title.replaceAll(".", "\\.");
+                var pwpath = title;
+                if ('group' in x) {
+                    pwpath = x.group + '.' + title;
+                }
+                return !pwpath.startsWith(path);
+            });
+
+            var selNode = reload_and_expand(path);
+        }
+
+        //------------------------------------------------------------------------------------
+        function reload_and_expand(path) {
+            build_tree();
+            var regex = /(?<!\\)\./g;
+            var nodes = path.split(regex)
+            while (nodes.length > 0) {
+                var node = g_treeview.getNode(path)
+                if (node != null) {
+                    console.log(`Expanding branch for ${path}`);
+                    g_treeview.expandBranchTo(node);
+                    g_treeview.clickNode(node)
+                    return node;
+                }
+                console.log(`Could not find node for ${path}`);
+                nodes.pop();
+                path = nodes.join('.')
+            }
+            return null
+        }
+
+        function show_context_menu(info) {
+            //console.log('context menu');
+            var folder = (info.data.children.length > 0);
+            //console.log("context menu, info.data=",info.data);
+
+            var node = g_treeview.getNode(info.data.path);
+            g_treeview.expandBranchTo(node);
+            g_treeview.clickNode(node);
+
+            if (folder) {
+                attach_buttons('id_tree_ctxmenu', {sep:' '}, info, [
+                    {id:'id_ctx_addlogin_btn', func:folderAddLogin, text:'Add Login Here'},
+                    {id:'id_ctx_addfolder_btn', func:folderAddFolder, text:'Add Folder Here'},
+                    {id:'id_ctx_edtfolder_btn', func:folderRename, text:'Rename Folder'},
+                    {id:'id_ctx_delfolder_btn', func:folderDelete, text:'Delete Folder'},
+                    {id:'id_ctx_mvfolder_btn', func:folderMove,  text:'Move Folder'},
+                ], true);
+            }
+            else {
+                attach_buttons('id_tree_ctxmenu', {sep:' '}, info, [
+                    {id:'id_ctx_viewlogin_btn', func:function(record) { viewLoginValues(record, false) }, text:'View'},                    
+                    {id:'id_ctx_editrecs_btn', func:function(record) {viewLoginValues(record, true)}, text:'Edit'},
+                    {id:'id_ctx_rmlogin_btn', func:delLogin, text:'Delete'},
+                    {id:'id_ctx_renlogin_btn', func:renLogin, text:'Rename'},
+                ], true);
+            }
+
+            var contextMenu = gebi('id_tree_ctxmenu');
+            var elem = info.target;
+            contextMenu.style.top = elem.pageY + "px";
+            contextMenu.style.left = elem.pageX + "px";
+
+            // Show the context menu
+            contextMenu.style.display = "block";
+        }
+
+        function uuid() {
+            const hex = '0123456789abcdef';
+            let result = '';
+            for (let i = 0; i < 32; i++) {
+                result += hex[Math.floor(Math.random() * 16)];
+            }
+            return result.replace(/\//g, '');
+        }
+
+        function getval(id, defval) {
+            var val = null;
+            if (typeof(defval) == 'string') {
+                val = defval
+            }
+            var obj = gebi(id);
+            return obj ? obj.value : val;
+        }
+
+        function rename_pwsafe_groups(groupname, newgroupname) {
+            for (var i=0; i<g_pwsafe.records.length; i++) {
+                var record = g_pwsafe.records[i];
+                if ('group' in record) {
+                    if (record.group.startsWith(groupname)) {
+                        record.group = record.group.replace(groupname, newgroupname)
+                    }
+                }
+            }
+        }
+
+        function onDestFolderSelected(treerec) {
+            g_folders_only = false;
+            var selpath = treerec.data.path;
+            var from_folder = g_saved_path.split(/(?<!\\)\./).pop();
+            var newfolder = disambiguate_branch(selpath, from_folder);
+            var newgroupname = selpath + '.' + newfolder;
+            var groupname = g_saved_path;
+
+            rename_pwsafe_groups(groupname, newgroupname);
+            var selNode = reload_and_expand(newgroupname);
+        }
+
+        function onCancelFolderSelection(treerec) {
+            g_folders_only = false;
+            var selNode = reload_and_expand(g_saved_path);
+        }
+       
+        function update_unsaved_ui(unsaved) {
+            var rootmenu_img = gebi('id_rootmenu_img');
+            var save_file_btn = gebi('id_save_file_btn');
+            if (typeof(update_unsaved_ui.rootmenu_img_color) == 'undefined') {
+                update_unsaved_ui.rootmenu_img_color = rootmenu_img.style.backgroundColor;
+                update_unsaved_ui.save_file_btn_color = save_file_btn.style.backgroundColor;
+            }
+            if (unsaved) {
+                rootmenu_img.style.backgroundColor = '#ff9999';
+                save_file_btn.style.backgroundColor = '#ff9999';
+            }
+            else {
+                rootmenu_img.style.backgroundColor = update_unsaved_ui.rootmenu_img_color;
+                save_file_btn.style.backgroundColor = update_unsaved_ui.save_file_btn_color;
+            }
+        }
+
+        function setPassword() {
+            var html = `<table style="width:100%; margin-bottom:6px;">
+                <tr>
+                    <td>New Password</td>
+                    <td><input id="id_new_password" type="password" style="width:100%;" value=""></td>
+                </tr>
+                </table>
+                <button id='id_btn_new_password'>Save</button>&nbsp;
+                <button onclick="hideModal()">Cancel</button>
+                `;
+
+            showModal(html, {'focus_id':'id_new_password'});
+
+            append_password_toggle("id_new_password", false);
+            gebi(`id_btn_new_password`).onclick = function() {
+                g_passphrase = gebi('id_new_password').value;
+                update_unsaved_ui(true);
+                hideModal();
+            };
+        }
+
+        function folderAddLogin(treerec) {
+            var path = treerec.data.path;
+
+            var html = '<table style="width:100%">';
+            var valtag;
+            for (field of ['title', 'username', 'password', 'URL', 'notes']) {
+                switch (field) {
+                    case 'password':
+                        valtag = `<input type='password' style='width:100%;' id="id_newlogin_val_${field}" />`
+                        break;
+                    case 'notes':
+                        valtag = `<textarea style='resize:none; width:95%;' id="id_newlogin_val_${field}"></textarea>`
+                        break;
+                    default:
+                        valtag = `<input style='width:95%;' id="id_newlogin_val_${field}" />`
+                        break;
+                }
+                html += `<tr>
+                    <td class='field_name'>${makeFirstUpper(field)}</td>
+                    <td>${valtag}</td>
+                    </tr>`;
+            }
+            html += '</table>';
+            html += '<br />';
+            html += `<button id='id_btn_save_rec'>Save</button>&nbsp;<button onclick="hideModal()">Cancel</button>`;
+
+            showModal(html, {'focus_id':'id_newlogin_val_title'});
+            append_password_toggle("id_newlogin_val_password", false);
+
+            gebi(`id_btn_save_rec`).onclick = function() {            
+                var now = new Date();
+
+                var title = getval('id_newlogin_val_title', 'No Title');
+
+                var record = {
+                    'uuid' : uuid(),
+                    'createTime' : now,
+                    'notes': getval('id_newlogin_val_notes', ''),
+                    'password': getval('id_newlogin_val_password', ''),
+                    'title': title,
+                    'username': getval('id_newlogin_val_username', ''),
+                    'URL': getval('id_newlogin_val_URL', '')
+                }
+
+                if (path != '')  {
+                    record.group = path;
+                }
+
+                g_pwsafe.records.push(record);
+                var newpath = (path == '') ? record.title : path + '.' + record.title;
+                console.log("reload and expand " + newpath)
+                var selNode = reload_and_expand(newpath)
+                update_unsaved_ui(true);
+                hideModal();
+            }
+        }
+
+        function folderAddFolder(treerec) {
+            var path = treerec.data.path;
+
+            var html = `<table style="width:100%; margin-bottom:6px;">
+                <tr>
+                    <td>Folder Name</td>
+                    <td><input id="id_new_folder" style="width:95%" value=""></td>
+                </tr>
+                </table>
+                <button id='id_btn_new_folder'>Save</button>&nbsp;
+                <button onclick="hideModal()">Cancel</button>
+                `;
+
+            showModal(html, {'focus_id':'id_new_folder'});
+
+            gebi(`id_btn_new_folder`).onclick = function() {
+                var foldername = gebi('id_new_folder').value.replaceAll('.', '\\.');
+                var newpath = (path == '') ? foldername : path + '.' + foldername;
+
+                if (!(newpath in g_paths_map)) {
+                    // Dummy record for folder placeholder
+                    var title = '';
+                    var record = {
+                        'group': newpath,
+                        'title': title // Empty title will cause the leaf `${newpath}.{title}` not to be shown (see buildTreeStruct)
+                    }
+                    g_pwsafe.records.push(record);
+                }
+
+                var selNode = reload_and_expand(newpath)
+                hideModal();
+            };
+        }
+
+        function folderRename(treerec) {
+            var path = treerec.data.path; // path is created while building the tree
+            var regex = /(?<!\\)\./g;
+            var folders = path.split(regex);
+            var groupname = folders.join(".");
+            var prevname = folders.pop();
+            var displayfolderName = prevname.replaceAll('\\.', '.') // get the innermost folder name
+
+            var html = `<table style="width:100%; margin-bottom:6px;">
+                <tr>
+                    <td>New Name</td>
+                    <td><input id="id_ren_folder" style="width:95%" value="${displayfolderName}"></td>
+                </tr>
+                </table>
+                <button id='id_btn_ren_folder'>Save</button>&nbsp;
+                <button onclick="hideModal()">Cancel</button>
+                `;
+
+            showModal(html, {'focus_id':'id_ren_folder'});
+
+            gebi(`id_btn_ren_folder`).onclick = function() {
+                var newname = gebi('id_ren_folder').value.replaceAll('.', '\\.');
+                var parentgroup = folders.join(".");
+                console.log(`before: ${newname}`);
+                var options = {'rmleaf':prevname}
+                newname = disambiguate_branch(parentgroup, newname, options);
+                console.log(`after: ${newname}`);
+                folders.push(newname);
+                newgroupname = folders.join(".");
+                
+                rename_pwsafe_groups(groupname, newgroupname);
+
+                var selNode = reload_and_expand(newgroupname);
+                update_unsaved_ui(true);
+                hideModal();
+            };
+        }
+
+        function folderDelete(treerec) {
+            console.log('folderDelete');
+            path = treerec.data.path;
+            update_unsaved_ui(true);
+            remove_and_reload(path)
+        }
+
+        function folderMove(treerec) {
+            g_saved_path = treerec.data.path;
+            g_folders_only = true;
+            build_tree();
+        }
+
+        function display_folder_data(treerec) {
+            var html = `<div class="record-header">
+                        ${treerec.data.name}<br />
+                        <hr /><br /></div>
+                        <div id='id_folder_btns'></div>`;
+
+            if (g_folders_only) {
+                inrhtml('id_record', html);
+
+                attach_buttons('id_folder_btns', {class:'folder-option', sep:'&nbsp;'}, treerec, [
+                    {id:'id_selectfolder_btn', func:onDestFolderSelected, text:'Select this folder'},
+                ]);
+
+                return;
+            }
+                        
+            inrhtml('id_record', html);
+
+            attach_buttons('id_folder_btns', {class:'folder-option', sep:'<br />'}, treerec, [
+                {id:'id_addlogin_btn', func:folderAddLogin, text:'Add Login Here'},
+                {id:'id_addfolder_btn', func:folderAddFolder, text:'Add Folder Here'},
+                {id:'id_edtfolder_btn', func:folderRename, text:'Rename Folder'},
+                {id:'id_delfolder_btn', func:folderDelete, text:'Delete Folder'},
+                {id:'id_mvfolder_btn', func:folderMove,  text:'Move Folder'},
+            ]);
+        }
+
+        function attach_buttons(id, btnui, treerec, btnlist, hide_after_click) {
+            var html = '';
+            var cls = 'class' in btnui ? `class='${btnui.class}' ` : '';
+            var btnsep = 'sep' in btnui ? btnui.sep : '';
+            var hide_on_click = typeof(hide_after_click) != 'boolean' ? false : hide_after_click;
+            
+            for (var i=0; i<btnlist.length; i++) {
+                var btninfo = btnlist[i];
+                var btnid = btninfo.id;
+                var btntxt = btninfo.text;
+                html += `<button id='${btnid}' ${cls}>${btntxt}</button>${btnsep}`;
+            }
+
+            inrhtml(id, html);
+            for (var i=0; i<btnlist.length; i++) {
+                let btninfo = btnlist[i];
+                let btnid = btninfo.id;
+                let btnfunc = btninfo.func;
+                
+                gebi(btnid).onclick = function() {
+                    // If a menu, hide it prior to executing the function
+                    if (hide_on_click) {
+                        gebi(id).style.display = 'none';
+                    }
+                    btnfunc(treerec);
+                }
+            }
+        }
+
+        function display_record_data(treerec) {
+            var index = treerec.data.index;
+            var pwrec = g_pwsafe.records[index];
+            var html = `<div class="record-header">
+                        ${pwrec.title.replaceAll('\\.','.')} &nbsp;
+                        <hr />
+                        <div id='id_login_btns'></div>
+                        </div>
+                        <br />
+                        <table id='id_table_record_data' style='width:100%'>`;
+
+            for (field of ['username', 'password', 'URL']) { // In quick view, don't show 'notes' and other fields
+                var value = null
+                if (field in pwrec) {
+                    value = pwrec[field];
+                    if (field == 'password') {
+                        value = `<input style='width:100%;' id="id_display_val_password" type="password" value="${value}" readonly />`
+                    }
+                    else {
+                        value = `<input style='width:100%;' id="id_display_val_${field}" value="${value}" readonly />`
+                    }
+
+                    /*
+                    if (field == 'notes') {
+                        value = value.replaceAll('\n', '<br />');
+                        var min_splitter_height = 300;
+                        var max_notes_height = min_splitter_height - 190;
+                        var style = 'max-height:120px; overflow-y:auto; overflow-x:none;'
+                        value = `<div id='id_notes_div' style='${style}'>${value}</div>`;                        
+                    }
+                    */
+                    html += `<tr>
+                        <td class='field_name'>${makeFirstUpper(field)}</td>
+                        <td style='word-break:break-all;'>${value}</td>
+                        </tr>`;
+                }
+            }
+            var changes = ''
+            for (field of [['createTime','Created'],['modifyTime', 'Modified'], ['passphraseModifyTime', 'Password changed']]) {
+                pwfield = field[0]
+                if (pwfield in pwrec) {
+                    if (changes != '') {
+                        changes +=  ',&nbsp';
+                    }
+                    changes += `<b>${field[1]}</b> ${daysSince(pwrec[pwfield])}`;
+                }
+            }
+            if (changes !== '') {
+                html += `<tr><td style='font-size:12px;' colspan=2>${changes}</td></tr>`;
+            }
+
+            html += '</table>';
+
+            inrhtml('id_record', html);
+
+            append_password_toggle("id_display_val_password");
+            append_copy_icon('id_display_val_username');
+            append_copy_icon('id_display_val_URL');
+
+            attach_buttons('id_login_btns', {sep:'&nbsp;'}, treerec, [
+                {id:'id_viewlogin_btn', func:function(record) { viewLoginValues(record, false) }, text:'View'},
+                {id:'id_editrecs_btn', func:function(record) { viewLoginValues(record, true) }, text:'Edit'},
+                {id:'id_rmlogin_btn', func:delLogin, text:'Delete'},
+                {id:'id_renlogin_btn', func:renLogin, text:'Rename'},
+            ]);
+        }
+
+        function display_click_data(clickdata) {
+            var selectedNode = clickdata.target.target;
+            g_treeview.selectNode(selectedNode);
+
+            var leaf = (clickdata.data.children.length == 0);
+            if (leaf) {
+                display_record_data(clickdata);
+                return;
+            }
+
+            display_folder_data(clickdata);
+        }
+
+        function open_result(idx) {
+            var tree_path = idx_to_treepath(idx); // Disambiguated tree path
+            var selNode = reload_and_expand(tree_path);
+            hideModal();
+        }
+        
+        function search_text() {
+            var html = `<table id='id_search_text_header' style='width:100%; margin-bottom:5px;'>
+                <tr>
+                    <td>Search for</td>
+                    <td><input id='id_search_text_input' style='width:95%;' /></td>
+                </tr>
+                </table>
+                <button id='id_btn_search_text'>Search</button>&nbsp;
+                <button onclick="hideModal()">Cancel</button>
+                
+                <div id='id_search_results' style='display:none; width:100%; margin-top:15px; height:50vh; overflow-y:auto;' ></div>
+                `;
+
+            showModal(html, {'focus_id':'id_search_text_input'});
+
+            gebi('id_btn_search_text').onclick = function() {
+                gebi('id_search_results').style.display = 'block';
+                var search_text = gebi('id_search_text_input').value.replaceAll('.', '\\.');
+
+                var search_results = gebi('id_search_results');
+                if (search_text.length < 3) {
+                    search_results.innerHTML = 'Seach text should include at least 3 characters.';
+                    return;
+                }
+
+                var results_html = '<table>';
+                var found = false;
+                for (var i=0; i<g_pwsafe.records.length; i++) {
+                    var record = g_pwsafe.records[i];
+                    var path = (record.group == '') ? record.title : record.group + '.' + record.title;                    
+                    for (property in record) {
+                        var recval = record[property];
+                        if (typeof(recval) !== 'string') {
+                            continue;
+                        }
+                        if (recval.includes(search_text)) {
+                            var hightlight_text = `<span style='background-color:yellow;'>${search_text}</span>`
+                            var hightlighted = recval.replaceAll(search_text, hightlight_text);
+                            hightlighted = hightlighted.replaceAll('\n', '<br />');
+                            found = true;
+                            results_html += `<tr>
+                                <td style='word-break:break-all;'><div style='color:green'>${path}</div>
+                                <b>${makeFirstUpper(property)}</b>:<br />
+                                ${hightlighted}</td>
+                                <td style='width:1px; vertical-align:top;'><button onClick='open_result(${i})'>Open</button></td>
+                                </tr>`;
+                        }
+                    }
+                }
+                results_html += '</table>';
+                if (!found) {
+                    results_html = 'No results found.';
+                }
+                var obj_search_header = gebi('id_search_text_header');
+                search_results.innerHTML = results_html;
+            };
+
+        }
+
+        function save_file() {
+            // Remove all the folder placeholders in the pwsafe records.
+            g_pwsafe.records = g_pwsafe.records.filter(function(x) {
+                return 'uuid' in x;
+            });
+
+            g_pwsafe.headers.lastSaveTime = new Date();
+            g_pwsafe.headers.lastSaveApp = 'MyCrypt v1.0';
+
+            function on_encrypt_progress(percent) {
+                console.log(percent);
+            }
+
+            var options = { 
+                'on_progress':on_encrypt_progress,
+                'percent_res':5
+            };
+
+            var html = `
+                <div style="width:100%; margin-left: auto; margin-right: auto;">Encrypting File...</div>
+                <div id="id_encrypt_progress" style="width:100%; margin-left: auto; margin-right: auto;"></div>
+            `;
+
+            showModal(html, {'modal_width':'260px'});
+
+            var encrypt_progress_bar = create_progress_bar('id_encrypt_progress');
+
+            function on_encrypt_progress(percent) {
+                encrypt_progress_bar.position(percent);
+            }
+
+
+            var buffer = g_pwsafe.encrypt(g_passphrase, options);
+            hideModal();
+
+            // var b64_encrypted = btoa(new Uint8Array(buffer).reduce(function (data, byte) {
+            //     return data + String.fromCharCode(byte);
+            // }, ''));
+            
+            var binary = '';
+            var bytes = new Uint8Array(buffer);
+            var len = bytes.byteLength;
+            for (var i = 0; i < len; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            var b64_encrypted = window.btoa(binary);
+            var request = {
+                'req':'set_file_b64content',
+                'filename':g_filename,
+                'data':b64_encrypted,
+            };
+            
+            sendJSON(request, function(reply) {
+                if ('error' in reply) {
+                    inrhtml('id_content', reply['error']);
+                    return;
+                }
+                update_unsaved_ui(false);
+                console.log('saved');
+            });
+            
+        }
+        
+        function idx_to_treepath(idx) {
+            if (idx in g_index_to_unique_path) {
+                return g_index_to_unique_path[idx];
+            }
+            return null;
+        }
+
+        function disambiguate_branch(path, leaf, options) {
+            if (typeof(options) == 'object') {
+                if ('rmleaf' in options && typeof(options.rmleaf) == 'string') {
+                    // Before suggesting a new name for duplicate leaf, remove
+                    // any references to previously disambiguated entries
+                    // that currently exist as prevleaf.
+                    var rmleaf = options.rmleaf;
+                    var prevpath = (path == '') ? rmleaf : path + '.' + rmleaf;
+                    delete g_paths_map[prevpath];
+                }
+            }
+            var newpath = (path == '') ? leaf : path + '.' + leaf;
+            var count = 1;
+            var newleaf = leaf;
+            while (newpath in g_paths_map) {
+                console.log(`${newpath} is in g_paths_map`)
+                count++;
+                newleaf = `${leaf} (${count})`;
+                newpath = (path == '') ? newleaf : path + '.' + newleaf;
+            }
+            g_paths_map[path] = 1;
+            g_paths_map[newpath] = 1;
+
+            if (typeof(options) == 'object' && 'index' in options) {
+                g_index_to_unique_path[options.index] = newpath;
+            }
+
+            return newleaf;
+        }
+
+        function buildTreeStruct(records) {
+            const tree = [];
+            g_paths_map = {};
+            g_index_to_unique_path = {};
+
+            for (var i=0; i < records.length; i++) {
+                var record = records[i];
+                
+                // The title is going to be the last node in the tree
+                // so replace all periods in the title without a preceding \\ to \\. 
+                // in order that the period would not stand for a new node. 
+                var title = record.title.replaceAll('.', '\\.').replaceAll('\\\\.', '\\.')
+                
+                var group = ('group' in record) ? record.group : '';
+               
+                var options = {'index': i};
+                title = disambiguate_branch(group, title, options);
+                var path = (group == '') ? title : group + '.' + title;
+
+                const nodes = path.split(/(?<!\\)\./); // Split on '.' but not '\\.'
+
+                let currentNode = tree;
+                let currentPath = '';
+                nodes.forEach((nodeName, index) => {
+                    const name = nodeName.replace(/\\\./g, '.'); // Replace '\\.' with '.'
+                    currentPath = currentPath ? `${currentPath}.${nodeName}` : nodeName; // Build the current path without replacing escaped periods
+
+                    let node = currentNode.find(n => n.name === name);
+
+                    if (!node) {
+                        node = { name, path: currentPath, children: [] };
+                        currentNode.push(node);
+                    }
+
+                    if (index === nodes.length - 1) {
+                        // Leaf node, do nothing
+                        node.index = i;
+                        if (record.title == '') {
+                            // The protocol is: empty title means don't show leaf
+                            node.hidden = 1;
+                        }
+                    } else {
+                        currentNode = node.children;
+                    }
+                });
+            }
+
+            sortTree(tree);
+            tree.sort((a, b) => {
+                return compareTreeNodes(a, b)
+            });
+
+            return tree;
+        }
+
+        function on_root_menu() {
+            var menuimg = gebi('id_rootmenu_img');
+            var menu = gebi('id_root_actions');
+            // Position the context menu at the mouse position
+            if (menu.style.display == "block") {
+                menu.style.display = "none";
+                return;
+            }
+            menu.style.top = menuimg.top + "px";
+            menu.style.left = menuimg.left + "px";
+            menu.style.display = "block";
+        }
+
+        function setStyleHeight(elem, offset_height) {
+            // set the style.height of DOM element elem so that
+            // after setting the style.height elem.offsetHeight will
+            // be equal to offset_height.
+
+            // Get the computed styles of the element
+            var style = window.getComputedStyle(elem);
+
+            // Check if the box-sizing is border-box
+            if (style.boxSizing === 'border-box') {
+                // If border-box, we can set the height directly
+                elem.style.height = offset_height + 'px';
+            } else {
+                // If not border-box, subtract padding and border from the offsetHeight
+                var paddingTop = parseInt(style.paddingTop);
+                var paddingBottom = parseInt(style.paddingBottom);
+                var borderTop = parseInt(style.borderTopWidth);
+                var borderBottom = parseInt(style.borderBottomWidth);
+
+                // Calculate the total height to set
+                var totalHeight = offset_height - paddingTop - paddingBottom - borderTop - borderBottom;
+                elem.style.height = totalHeight + 'px';
+            }
+        }
+
+
+        function build_tree() {
+            window.onclick = function(e) {
+                if (e.target == gebi('id_rootmenu_img')) {
+                    return true;
+                }
+                //console.log('inside window.onclick');
+                if (e.button !== 2) { // not right click
+                    var elements = document.querySelectorAll('.ctxMenu');
+                    // Check if the clicked element is not a .ctxmenu element or a descendant of one
+                    var isClickInsideMenu = Array.from(elements).some(function(element) {
+                        return element.contains(e.target);
+                    });
+
+                    if (!isClickInsideMenu) {
+                        // Loop through the elements and hide them
+                        for (var i = 0; i < elements.length; i++) {
+                            if (window.getComputedStyle(elements[i]).display !== 'none') {
+                                elements[i].style.display = 'none';
+                            }
+                        }
+                    }
+                }
+                return true;
+            };
+
+            var tree = buildTreeStruct(g_pwsafe.records);
+
+            var tree_title = "<div id='id_tree_title'>";
+            
+            if (!g_folders_only) {
+                tree_title += `
+                <img src="hmenu.svg" style='width:28px; border-radius:5px; vertical-align:middle;'
+                    id='id_rootmenu_img'
+                    onmouseover="this.style.cursor='pointer';"
+                    onmouseout="this.style.cursor='auto';"
+                    onclick="on_root_menu();">
+                <span style='font-size:18px; vertical-align:middle;'>&nbsp; MyCrypt</span>
+                <hr />
+                <div id="id_root_actions" class="ctxMenu" 
+                    style='display:none;'>
+                </div>`;
+            }
+            else {
+                tree_title += `<div style='font-size:18px; vertical-align:middle;'>Select Folder</div>
+                <button onClick='onCancelFolderSelection()'>Cancel folder selection</button>`;
+            }
+
+            tree_title += "</div>";
+
+            html = `<div id='content' style='width:100%; height:95vh;'>
+                        <div id='id_top_panel'>
+                            ${tree_title}
+                            <div id='id_tree' class="no-select" style='width:100%; height:calc(100% - 60px); overflow-x:hidden; overflow-y:auto;'></div>
+                        </div>
+
+                        <div id='id_splitter'></div>
+
+                        <div id='id_bottom_panel' style='overflow-x:hidden; overflow-y:auto;'>
+                            <div id='id_record' style='width:100%; height:100%; overflow-x:auto; overflow-y: auto;'></div>
+                        </div>
+                    </div>`;
+
+            html += '<div id="id_tree_ctxmenu" class="ctxMenu" style="display:none;"></div>';
+
+            inrhtml('id_content', html);
+            setZoom100();
+
+            g_treeview = new TreeView(tree, 'id_tree', g_folders_only);
+            g_treeview.on('click', display_click_data);
+            g_treeview.on('context', show_context_menu);
+
+            document.onkeydown = function(e) {
+                if (e.keyCode == 38) { // arrow up
+                    g_treeview.clickBeforeSelected();
+                }
+                if (e.keyCode == 40) { // arrow down
+                    node = g_treeview.clickAfterSelected();
+                }
+                if (e.keyCode == 39) { // arrow right
+                    g_treeview.expandAtSelected();
+                }
+                if (e.keyCode == 37) { // arrow left
+                    g_treeview.collapseAtSelected();
+                }
+            }
+
+            if (!g_folders_only) {
+                var treerec = { data : { path : '' } };
+
+                attach_buttons('id_root_actions', {class:'root-menu', sep:' '}, treerec, [
+                    {id:'id_add_root_login_btn', func:folderAddLogin, text:'Add Root Login'},
+                    {id:'id_add_root_folder_btn', func:folderAddFolder, text:'Add Root Folder'},
+                    {id:'id_save_file_btn', func:save_file, text:'Save File'},
+                    {id:'id_searchtxt_btn', func:search_text, text:'Search Text'},
+                    {id:'id_setpasswd_btn', func:setPassword, text:'Set Master Password'},
+                ], true);
+            }
+
+            var title_height = gebi('id_tree_title').offsetHeight;
+            var tree_div = gebi('id_tree');
+            tree_div.style.height = `calc(100% - ${title_height}px);`
+            attach_splitter()
+
+            g_treeview.clickFirstItem();
+        }
+
+        function attach_splitter() {
+            const splitter = gebi('id_splitter');
+            const topPanel = gebi('id_top_panel');
+            const bottomPanel = gebi('id_bottom_panel');
+            var start_bpanel_height = 270;
+            var start_splitter_height = splitter.clientHeight;
+            var the_rest = start_bpanel_height + start_splitter_height;
+            var top_height = gebi('id_content').offsetHeight - the_rest;
+            topPanel.style.height = `${top_height}px`;
+            bottomPanel.style.height = `${start_bpanel_height}px`;
+            let isDragging = false;
+
+            splitter.onmousedown = function(e) {
+                isDragging = true;
+                e.preventDefault(); // Prevents text selection
+            };
+
+            document.onmousemove = function(e) {
+                if (!isDragging) {
+                    return;
+                }
+
+                var min_height = 260; // min splitter height
+
+                if (e.clientY < min_height) {
+                    // Top panel will be too short
+                    return;
+                }
+
+                const offsetBottom = window.innerHeight - e.clientY;
+                if (offsetBottom < min_height) {
+                    // Bottom panel will be too short
+                    return;
+                }
+
+                topPanel.style.height = `calc(100vh - ${offsetBottom + 5}px)`; // 5px for the splitter height
+                bottomPanel.style.height = `${offsetBottom - 15}px`; // 15px for "I didn't have time to check why"
+            };
+
+            document.onmouseup = function(e) {
+                isDragging = false;
+            };
+        }
+
+        function sendJSON(json, callback) {
+            function inner_callback(params) {
+                hideModal();
+                callback(params);
+            }
+            var html = '<div style="text-align:center;">Please wait...<br /><img src="loader.svg" /><div>';
+            showModal(html, {'modal_width':'260px'});
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", 'manager.php', true);
+            xhr.setRequestHeader("Content-Type", "application/json");
+            xhr.onreadystatechange = function() {
+                if (this.readyState === 4) {
+                    if (this.status === 200) {
+                        var reply = JSON.parse(this.responseText);
+                        inner_callback(reply);
+                    } else {
+                        inner_callback({'sendJSON_error':'Request failed with status ' + this.status});
+                    }
+                }
+            }
+            xhr.onerror = function() {
+                inner_callback({'sendJSON_error':'Network error'});
+            };
+            xhr.send(JSON.stringify(json));
+        }
+
+
+        function rmExt(filename) {
+            var parts = filename.split('.');
+            if (parts.length > 1) {
+                parts.pop(); // Remove the last element (the extension)
+            }
+            return parts.join('.');
+        }
+
+        function inrhtml(id, str) {
+            gebi(id).innerHTML = str;
+        }
+
+        function openFile( filename ) {
+            g_passphrase = gebi('id_file_password').value;
+            g_filename = filename;
+            
+            sendJSON({'req':'get_file_b64content', 'filename':filename}, function(reply) {
+                if ('error' in reply) {
+                    inrhtml('id_content', reply['error']);
+                    return;
+                }
+
+                function on_decryption(pdb)
+                {
+                    hideModal();
+
+                    if (pdb instanceof Error) {
+                        alert(pdb.message);
+                        return;
+                    }
+
+                    build_tree();
+                }
+
+                var options = { 
+                    'strictFieldTypeCheck':true,
+                    'on_progress':on_decrypt_progress,
+                    'on_complete':on_decryption,
+                    'percent_res':5
+                };
+
+                var html = `
+                <div style="width:100%; margin-left: auto; margin-right: auto;">Decrypting File...</div>
+                <div id="id_decrypt_progress" style="width:100%; margin-left: auto; margin-right: auto;"></div>`
+                showModal(html, {'modal_width':'260px'});
+
+                var decrypt_progress_bar = create_progress_bar('id_decrypt_progress');
+
+                function on_decrypt_progress(percent) {
+                    decrypt_progress_bar.position(percent);
+                }
+
+                g_pwsafe.decrypt(window.atob(reply['file_b64_content']), g_passphrase, options);
+            });
+        }
+
+        function getPassFor( filename ) {
+            html = `Password: <input id="id_file_password" 
+                    style='max-width:300px;'
+                    type="password" value="" />
+                    &nbsp;<button onClick="openFile('${filename}')">Open</button>`
+            inrhtml('id_content', html);
+            append_password_toggle("id_file_password", false);
+        }
+
+        function getFiles() {
+            sendJSON({'req':'pwfiles'}, function(reply) {
+                if (!('pwfiles' in reply)) {
+                    inrhtml('id_content', 'No password files found');
+                    return;
+                }
+
+                var files = reply['pwfiles'];
+                var html = '<table>';
+                for (var i=0; i<files.length; i++) {
+                    var file = rmExt(files[i]);
+                    html += `<tr><td>${file}</td><td><button onClick='getPassFor("${file}")'>Open</button></td></tr>`
+                    
+                }
+                html += '</table>';
+                inrhtml('id_content', html);
+            });
+        }
+
+        
+    </script>
+    </head>
+    <body onLoad='getFiles()'>
+        <div id="id_modal" class="modal">
+            <div class="modal-content" style='width:calc(100% - 95px);' id="id_modal_content">
+            </div>
+        </div>    
+        <div id='id_content' style="height:100%; min-width:300px;"></div>
+    </body>
+</html>

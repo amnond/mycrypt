@@ -23,6 +23,10 @@
             border: 1px solid black;
         }
 
+        .no-border {
+            border:none !important;
+        }
+
         td {
             padding: 5px;
         }
@@ -68,14 +72,15 @@
             padding-bottom: 3px;
         }
 
+        /*
         .modal {
             display: none;
             position: fixed;
-            z-index: 1;
+            z-index: 10;
             left: 0;
             top: 0;
-            width: 100%;
-            height: 100%;
+            width: 100vw;
+            height: 100vh;
             overflow: auto;
             background-color: rgba(0, 0, 0, 0.4);
         }
@@ -87,6 +92,7 @@
             border: 1px solid #888;
             width: 30%;
         }
+        */
 
         .ctxMenu {
             display: none;
@@ -163,6 +169,7 @@
         // affects the UI, not the .psafe3 file).
         var g_paths_map = null; 
         var g_index_to_unique_path = null;
+        var g_modal_shown = false;
 
         function gebi(id) {
             return document.getElementById(id);
@@ -530,6 +537,74 @@
 
         }
         
+        function showModal(html_content, options) {
+            // Create modal elements
+            const modal = document.createElement('div');
+            modal.id = 'customModal';
+            modal.style.position = 'fixed';
+            modal.style.top = '50%';
+            modal.style.left = '50%';
+            modal.style.width = '50%';
+            modal.style.minWidth = '300px';
+            modal.style.maxWidth = '800px';
+            modal.style.transform = 'translate(-50%, -50%)';
+            modal.style.backgroundColor = 'white';
+            modal.style.padding = '20px';
+            modal.style.boxShadow = '0 5px 15px rgba(0,0,0,0.3)';
+            modal.style.zIndex = '1000';
+
+            const overlay = document.createElement('div');
+            overlay.id = 'modalOverlay';
+            overlay.style.position = 'fixed';
+            overlay.style.top = '0';
+            overlay.style.left = '0';
+            overlay.style.width = '100%';
+            overlay.style.height = '100%';
+            overlay.style.backgroundColor = 'rgba(0,0,0,0.5)';
+            overlay.style.zIndex = '999';
+
+            // Insert HTML content into modal
+            modal.innerHTML = html_content;
+
+            // Append modal and overlay to the body
+            document.body.appendChild(modal);
+            document.body.appendChild(overlay);
+
+            var focus_id, modal_width;
+            if (typeof(options) == 'object') {
+                if ('focus_id' in options) {
+                    focus_id = options['focus_id'];
+                }
+                if ('modal_width' in options) {
+                    modal_width = options['modal_width'];
+                }
+            }
+
+            if (typeof(focus_id) == 'string') {
+                setTimeout(function() {gebi(focus_id).focus();}, 500)
+                
+                console.log(`focusing on id=${focus_id}`)
+            }
+            if (typeof(modal_width) == 'string') {
+                modal.style.width = modal_width;
+                console.log(`setting modal.style.width=${modal_width}`)
+            }
+
+            // Close modal when overlay is clicked
+            overlay.addEventListener('click', hideModal);
+            g_modal_shown = true;
+        }
+
+        function hideModal() {
+            const modal = gebi('customModal');
+            const overlay = gebi('modalOverlay');
+            if (modal) modal.remove();
+            if (overlay) overlay.remove();
+            g_modal_shown = false;
+        }
+
+
+        /*
         // Function to show the modal        
         function showModal(html, options) {
             var focus_id, modal_width;
@@ -551,6 +626,7 @@
             if (typeof(modal_width) == 'string') {
                 modal_content.style.width = modal_width;
             }
+            
         }
 
         // Function to hide the modal
@@ -559,10 +635,12 @@
             modal.style.display = "none"; // hide modal
 
             const modal_content = gebi("id_modal_content");
-            modal_content.style.width = 'calc(100% - 95px)' // reset modal content width; 
+            modal_content.style.width = 'calc(100% - 95px)' // reset modal content width;
+            g_modal_shown = false; 
         }
 
         const modal = gebi("modal");
+        */
 
         function sortTree(nodes) {
             for (const node of nodes) {
@@ -1338,6 +1416,10 @@
             g_treeview.on('context', show_context_menu);
 
             document.onkeydown = function(e) {
+                if (g_modal_shown) {
+                    return;
+                }
+                
                 if (e.keyCode == 38) { // arrow up
                     g_treeview.clickBeforeSelected();
                 }
@@ -1500,10 +1582,12 @@
         }
 
         function getPassFor( filename ) {
-            html = `Password: <input id="id_file_password" 
-                    style='max-width:300px;'
-                    type="password" value="" />
-                    &nbsp;<button onClick="openFile('${filename}')">Open</button>`
+            html = `<div style='width:95%; display:flex; align-items:center;'>
+                    <div style='text-align:right; margin-right:5px;'>Password</div>
+                    <input id="id_file_password" type="password" value="" />
+                    <button onClick="openFile('${filename}')">Open</button>
+                    </div>`
+
             inrhtml('id_content', html);
             append_password_toggle("id_file_password", false);
         }
@@ -1531,10 +1615,12 @@
     </script>
     </head>
     <body onLoad='getFiles()'>
+        <!--
         <div id="id_modal" class="modal">
             <div class="modal-content" style='width:calc(100% - 95px);' id="id_modal_content">
             </div>
-        </div>    
+        </div>
+        -->
         <div id='id_content' style="height:100%; min-width:300px;"></div>
     </body>
 </html>

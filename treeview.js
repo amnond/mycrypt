@@ -398,6 +398,7 @@ function atob_(str) {
                         return el.offsetParent !== null;
                     });
                     var tl = visibleElements.length;
+                    console.log('tl', tl);
                     if (tl > 1) {
                         self.collapse(parent.childNodes[0]);
                         self.collapse(gparent.childNodes[0]);

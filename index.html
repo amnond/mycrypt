@@ -2,7 +2,7 @@
 <html>
     <head>
         <meta http-equiv='Content-Type' content='text/html; charset=utf-8'>
-        <meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">
+        <meta name="viewport" content="width=device-width,initial-scale=1.0">
 
         <title>MyCrypt</title>
         <link rel="icon" type="image/svg+xml" href="lock.svg">
@@ -11,11 +11,15 @@
         <link rel="preload" as="image" href="eye.svg">
         <link rel="preload" as="image" href="eye_off.svg">
         <link rel="preload" as="image" href="loader.svg">
+        <link rel="preload" as="image" href="copy.svg">
         <style>
+        *, *::before, *::after { box-sizing:border-box; }
+        html { height:100%; }
         body, button, input {
             font-family:Arial;
             font-size:14px;
         }
+        body { height:100%; margin:0; padding:0; }
         table {
             border-collapse: collapse;
         }
@@ -132,19 +136,46 @@
             width: 200px;
         }
 
+        @media (max-width: 600px) {
+            body, button, input {
+                font-size: 16px;
+            }
+            .record-header {
+                font-size: 16px;
+            }
+            #id_content {
+                min-width: unset;
+            }
+            .ctxMenu {
+                min-width: 100px;
+            }
+        }
+
         #id_top_panel {
             background: #eee;
             overflow: auto;
+            flex-shrink: 0;
         }
         #id_splitter {
             background: #444;
             height: 5px;
             cursor: ns-resize;
+            flex-shrink: 0;
+            touch-action: none;
         }
         #id_bottom_panel {
             background: #eee;
             overflow: auto;
             flex-grow: 1;
+            flex-shrink: 1;
+            min-height: 120px;
+        }
+
+        #id_content {
+            height:100%;
+            min-width:300px;
+            display:flex;
+            flex-direction:column;
         }
 
         </style>
@@ -169,6 +200,7 @@
         // affects the UI, not the .psafe3 file).
         var g_paths_map = null; 
         var g_index_to_unique_path = null;
+        var g_unique_path_to_index = null;
         var g_modal_shown = false;
 
         function gebi(id) {
@@ -544,14 +576,15 @@
             modal.style.position = 'fixed';
             modal.style.top = '50%';
             modal.style.left = '50%';
-            modal.style.width = '50%';
-            modal.style.minWidth = '300px';
-            modal.style.maxWidth = '800px';
+            modal.style.width = 'min(90%, 800px)';
+            modal.style.maxHeight = '90vh';
+            modal.style.overflowY = 'auto';
             modal.style.transform = 'translate(-50%, -50%)';
             modal.style.backgroundColor = 'white';
             modal.style.padding = '20px';
             modal.style.boxShadow = '0 5px 15px rgba(0,0,0,0.3)';
             modal.style.zIndex = '1000';
+            modal.style.boxSizing = 'border-box';
 
             const overlay = document.createElement('div');
             overlay.id = 'modalOverlay';
@@ -655,13 +688,15 @@
         function remove_and_reload(path) {
             console.log(`remove and reload ${path}`);
 
-            g_pwsafe.records = g_pwsafe.records.filter(function(x) {
-                var title = x.title.replaceAll(".", "\\.");
-                var pwpath = title;
-                if ('group' in x) {
-                    pwpath = x.group + '.' + title;
+            var indexes_to_remove = {};
+            for (var up in g_unique_path_to_index) {
+                if (up === path || up.startsWith(path + '.')) {
+                    indexes_to_remove[g_unique_path_to_index[up]] = true;
                 }
-                return !pwpath.startsWith(path);
+            }
+
+            g_pwsafe.records = g_pwsafe.records.filter(function(x, index) {
+                return !(index in indexes_to_remove);
             });
 
             var selNode = reload_and_expand(path);
@@ -718,6 +753,16 @@
             var elem = info.target;
             contextMenu.style.top = elem.pageY + "px";
             contextMenu.style.left = elem.pageX + "px";
+            contextMenu.style.right = "auto";
+
+            var rect = contextMenu.getBoundingClientRect();
+            if (rect.right > window.innerWidth) {
+                contextMenu.style.left = "auto";
+                contextMenu.style.right = "10px";
+            }
+            if (rect.bottom > window.innerHeight) {
+                contextMenu.style.top = (window.innerHeight - rect.height - 10) + "px";
+            }
 
             // Show the context menu
             contextMenu.style.display = "block";
@@ -745,7 +790,7 @@
             for (var i=0; i<g_pwsafe.records.length; i++) {
                 var record = g_pwsafe.records[i];
                 if ('group' in record) {
-                    if (record.group.startsWith(groupname)) {
+                    if (record.group === groupname || record.group.startsWith(groupname + '.')) {
                         record.group = record.group.replace(groupname, newgroupname)
                     }
                 }
@@ -1245,6 +1290,7 @@
 
             if (typeof(options) == 'object' && 'index' in options) {
                 g_index_to_unique_path[options.index] = newpath;
+                g_unique_path_to_index[newpath] = options.index;
             }
 
             return newleaf;
@@ -1254,6 +1300,7 @@
             const tree = [];
             g_paths_map = {};
             g_index_to_unique_path = {};
+            g_unique_path_to_index = {};
 
             for (var i=0; i < records.length; i++) {
                 var record = records[i];
@@ -1313,9 +1360,16 @@
                 menu.style.display = "none";
                 return;
             }
-            menu.style.top = menuimg.top + "px";
-            menu.style.left = menuimg.left + "px";
+            var rect = menuimg.getBoundingClientRect();
+            menu.style.top = rect.bottom + "px";
+            menu.style.left = rect.left + "px";
             menu.style.display = "block";
+
+            var menuRect = menu.getBoundingClientRect();
+            if (menuRect.right > window.innerWidth) {
+                menu.style.left = "auto";
+                menu.style.right = "10px";
+            }
         }
 
         function setStyleHeight(elem, offset_height) {
@@ -1466,36 +1520,45 @@
             bottomPanel.style.height = `${start_bpanel_height}px`;
             let isDragging = false;
 
-            splitter.onmousedown = function(e) {
+            function startDrag(e) {
                 isDragging = true;
-                e.preventDefault(); // Prevents text selection
-            };
+                e.preventDefault();
+            }
 
-            document.onmousemove = function(e) {
+            function onDrag(e) {
                 if (!isDragging) {
                     return;
                 }
 
-                var min_height = 260; // min splitter height
+                var clientY = e.clientY || (e.touches && e.touches[0].clientY);
+                if (clientY == null) return;
 
-                if (e.clientY < min_height) {
-                    // Top panel will be too short
+                var min_height = 260;
+
+                if (clientY < min_height) {
                     return;
                 }
 
-                const offsetBottom = window.innerHeight - e.clientY;
+                const offsetBottom = window.innerHeight - clientY;
                 if (offsetBottom < min_height) {
-                    // Bottom panel will be too short
                     return;
                 }
 
-                topPanel.style.height = `calc(100vh - ${offsetBottom + 5}px)`; // 5px for the splitter height
-                bottomPanel.style.height = `${offsetBottom - 15}px`; // 15px for "I didn't have time to check why"
-            };
+                topPanel.style.height = `calc(100vh - ${offsetBottom + 5}px)`;
+                bottomPanel.style.height = `${offsetBottom - 15}px`;
+            }
 
-            document.onmouseup = function(e) {
+            function stopDrag() {
                 isDragging = false;
-            };
+            }
+
+            splitter.onmousedown = startDrag;
+            document.onmousemove = onDrag;
+            document.onmouseup = stopDrag;
+
+            splitter.ontouchstart = startDrag;
+            document.ontouchmove = onDrag;
+            document.ontouchend = stopDrag;
         }
 
         function sendJSON(json, callback) {
@@ -1585,11 +1648,19 @@
             html = `<div style='width:95%; display:flex; align-items:center;'>
                     <div style='text-align:right; margin-right:5px;'>Password</div>
                     <input id="id_file_password" type="password" value="" />
-                    <button onClick="openFile('${filename}')">Open</button>
+                    <button id="id_open_file_btn" onClick="openFile('${filename}')">Open</button>
                     </div>`
 
             inrhtml('id_content', html);
             append_password_toggle("id_file_password", false);
+            setTimeout(function() {
+                gebi('id_file_password').focus();
+            }, 100);
+            gebi('id_file_password').addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    gebi('id_open_file_btn').click();
+                }
+            });
         }
 
         function getFiles() {

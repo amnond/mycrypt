@@ -1,1 +1,3 @@
 *.psafe3
+psafe/
+config.php

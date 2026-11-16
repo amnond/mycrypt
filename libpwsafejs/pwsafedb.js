@@ -7,6 +7,14 @@ PWSafeDB.isWebWorker = typeof importScripts != 'undefined'; // am I a web worker
 PWSafeDB.isNode = typeof module !== 'undefined';
 PWSafeDB.BLOCK_SIZE = 16;
 PWSafeDB.MIN_HASH_ITERATIONS = 2048; // recommended in specs
+// Iterations used when writing a file. The count is stored in the file header,
+// so raising it stays compatible with other Password Safe v3 implementations.
+PWSafeDB.DEFAULT_HASH_ITERATIONS = 300000;
+// Upper bound accepted when reading a file, so a hostile .psafe3 cannot lock up
+// the browser with an absurd iteration count.
+PWSafeDB.MAX_HASH_ITERATIONS = 5000000;
+// Largest field accepted when parsing a file (defence against malformed input).
+PWSafeDB.MAX_FIELD_SIZE = 8 * 1024 * 1024;
 
 if (PWSafeDB.isNode) {
     var fs = require('fs');
@@ -86,8 +94,17 @@ sortRecordsByTitle: function() {
 },
 
 decrypt: function(buffer, passphrase, options) {
+    options = options || {};
     if (!('on_complete' in options)) {
         options.on_complete = function() {}
+    }
+    if (typeof passphrase !== 'string' || passphrase.length === 0) {
+        options.on_complete(new Error("Refusing to decrypt with an empty passphrase"));
+        return;
+    }
+    if (!buffer || (typeof buffer.byteLength !== 'number' && typeof buffer.length !== 'number')) {
+        options.on_complete(new Error("No file data supplied"));
+        return;
     }
     var strictFieldTypeCheck = 'strictFieldTypeCheck' in options ? options.strictFieldTypeCheck : false;
 
@@ -129,6 +146,10 @@ decrypt: function(buffer, passphrase, options) {
 },
 
 _validateFile: function() {
+    if (!this._view || this._view.byteLength < 200) {
+        throw new Error("File is too small to be a valid v3 file");
+    }
+
     if (this._view.getBinaryString(4) != "PWS3") {
         throw new Error("Not a PWS v3 file");
     }
@@ -153,6 +174,10 @@ _decryptFields: function(keys, options) {
     }
     var numFieldBlocks = (this._eofMarkerPos - this._view.tell()) / PWSafeDB.BLOCK_SIZE;
 
+    if (numFieldBlocks < 1) {
+        throw new Error("No encrypted fields found");
+    }
+
     return this._newjDataView(TwoFish.decrypt(this._view, numFieldBlocks, keys.K, true, options));
 },
 
@@ -164,7 +189,6 @@ _verifyHMAC: function(keys, callback) {
         var actualHMAC = Crypto.HMAC(Crypto.SHA256, this._hashBytes, keys.L, {asString: true});
         callback(expectedHMAC === actualHMAC); return;
     } else {
-        console.log('decrypt: hashbytes', this._hashBytes)
         Crypto.HMAC(Crypto.SHA256, this._hashBytes, keys.L, {asString: true, callback: function(actualHMAC) {
             callback(expectedHMAC === actualHMAC); return;
         }});
@@ -176,6 +200,11 @@ _getDecryptionKeys: function(passphrase) {
     var salt = this._view.getBytes(32, 4);
     var iter = this._view.getUint32();
     var expectedStretchedKeyHash = this._view.getBinaryString(32);
+
+    if (iter < 1 || iter > PWSafeDB.MAX_HASH_ITERATIONS) {
+        throw new Error("Unsupported passphrase iteration count (" + iter + ")");
+    }
+
     var stretchedKey = this._stretchPassphrase(passphrase, salt, iter);
     var stretchedKeyHash = Crypto.SHA256(stretchedKey, {asString: true});
 
@@ -351,7 +380,6 @@ _readAllRecords: function(fieldView, strictFieldType) {
                 }
             }
         }
-        console.log("records after decrypt:", records)
         return records;
     }).call(this);
 
@@ -362,6 +390,9 @@ _readField: function(view, isHeader) {
 
     var fieldSize = view.getUint32();
     var offset = view.tell()+1;
+    if (fieldSize > PWSafeDB.MAX_FIELD_SIZE) {
+        throw new Error("Invalid field size at offset " + (offset-5) + " -- field too large");
+    }
     if (offset + fieldSize >= view.byteLength) {
         throw new Error("Invalid field size at offset " + (offset-5) + " -- larger than remainder of file");
     }
@@ -623,11 +654,19 @@ _serializeFields: function() {
 },
 
 encrypt: function(passphrase, options) {
-    var iterations = PWSafeDB.MIN_HASH_ITERATIONS;;
+    if (typeof passphrase !== 'string' || passphrase.length === 0) {
+        throw new Error("Refusing to encrypt with an empty passphrase");
+    }
+
+    options = options || {};
+    var iterations = PWSafeDB.DEFAULT_HASH_ITERATIONS;
     if ('iterations' in options) {
-        iterations = options.iterations;
-        if (iterations < PWSafeDB.MIN_HASH_ITERATIONS) {
-            iterations = PWSafeDB.MIN_HASH_ITERATIONS;
+        iterations = parseInt(options.iterations, 10);
+        if (!isFinite(iterations) || iterations < PWSafeDB.DEFAULT_HASH_ITERATIONS) {
+            iterations = PWSafeDB.DEFAULT_HASH_ITERATIONS;
+        }
+        if (iterations > PWSafeDB.MAX_HASH_ITERATIONS) {
+            iterations = PWSafeDB.MAX_HASH_ITERATIONS;
         }
     }
 
@@ -651,7 +690,6 @@ encrypt: function(passphrase, options) {
 
     // trailing data
     view.writeBinaryString('PWS3-EOFPWS3-EOF');
-    console.log("encrypt: writing hashbytes", this._hashBytes);
     view.writeBytes(Crypto.HMAC(Crypto.SHA256, this._hashBytes, keys.L, {asBytes: true}));
 
     if (view.tell() != view.byteLength) {
@@ -666,7 +704,7 @@ encryptAndSaveFile: function(passphrase, fileName, iterations) {
         throw new Error('saving files not supported in browser');
     }
 
-    var buffer = this.encrypt(passphrase, iterations);
+    var buffer = this.encrypt(passphrase, { iterations: iterations });
     fs.writeFileSync(fileName, buffer, { mode: 384 /* 0600 - lint complains about using octal */ });
 }
 
